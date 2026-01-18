@@ -1,4 +1,4 @@
-package com.bancario.msdirectorio.repository;
+package com.bancario.msdirectorio.repositorio;
 
 import java.util.List;
 import java.util.Optional;
@@ -7,10 +7,10 @@ import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.data.mongodb.repository.Query;
 import org.springframework.stereotype.Repository;
 
-import com.bancario.msdirectorio.model.Institucion;
+import com.bancario.msdirectorio.modelo.Institucion;
 
 @Repository
-public interface InstitucionRepository extends MongoRepository<Institucion, String> {
+public interface InstitucionRepositorio extends MongoRepository<Institucion, String> {
 
     Optional<Institucion> findByReglasEnrutamientoPrefijoBin(String prefijoBin);
 

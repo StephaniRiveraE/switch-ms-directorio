@@ -1,4 +1,4 @@
-package com.bancario.msdirectorio.service;
+package com.bancario.msdirectorio.servicio;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -12,36 +12,37 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Service;
 
-import com.bancario.msdirectorio.model.DatosTecnicos;
-import com.bancario.msdirectorio.model.Institucion;
-import com.bancario.msdirectorio.model.InterruptorCircuito;
-import com.bancario.msdirectorio.model.ReglaEnrutamiento;
-import com.bancario.msdirectorio.repository.InstitucionRepository;
+import com.bancario.msdirectorio.dto.InstitucionDTO;
+import com.bancario.msdirectorio.modelo.DatosTecnicos;
+import com.bancario.msdirectorio.modelo.Institucion;
+import com.bancario.msdirectorio.modelo.InterruptorCircuito;
+import com.bancario.msdirectorio.modelo.ReglaEnrutamiento;
+import com.bancario.msdirectorio.repositorio.InstitucionRepositorio;
+import com.bancario.msdirectorio.mapper.InstitucionMapper;
 
 import lombok.extern.slf4j.Slf4j;
+import lombok.RequiredArgsConstructor;
 
 @Slf4j
 @Service
-public class DirectorioService {
+@RequiredArgsConstructor
+public class DirectorioServicio {
 
-    private final InstitucionRepository institucionRepository;
+    private final InstitucionRepositorio institucionRepositorio;
     private final RedisTemplate<String, Object> redisTemplate;
-
-    public DirectorioService(InstitucionRepository institucionRepository,
-            RedisTemplate<String, Object> redisTemplate) {
-        this.institucionRepository = institucionRepository;
-        this.redisTemplate = redisTemplate;
-    }
+    private final InstitucionMapper mapper;
 
     private static final String CACHE_KEY_PREFIX = "lookup:bin:";
 
-    public Institucion registrarInstitucion(@NonNull Institucion institucion) {
+    public InstitucionDTO registrarInstitucion(@NonNull InstitucionDTO dto) {
+
+        Institucion institucion = mapper.toEntity(dto);
 
         if (institucion.getCodigoBic() == null) {
             throw new IllegalArgumentException("El codigoBic no puede ser nulo");
         }
 
-        if (institucionRepository.findByCodigoBic(institucion.getCodigoBic()).isPresent()) {
+        if (institucionRepositorio.findByCodigoBic(institucion.getCodigoBic()).isPresent()) {
             throw new RuntimeException("El banco con BIC " + institucion.getCodigoBic() + " ya existe.");
         }
 
@@ -53,51 +54,59 @@ public class DirectorioService {
             institucion.setReglasEnrutamiento(new ArrayList<>());
         }
 
-        return institucionRepository.save(institucion);
+        Institucion saved = institucionRepositorio.save(institucion);
+        return mapper.toDTO(saved);
     }
 
-    public List<Institucion> listarTodas() {
-        return institucionRepository.findAll();
+    public List<InstitucionDTO> listarTodas() {
+        return mapper.toDTOList(institucionRepositorio.findAll());
     }
 
-    public Optional<Institucion> buscarPorBic(String bic) {
+    public Optional<InstitucionDTO> buscarPorBic(String bic) {
         if (bic == null)
             return Optional.empty();
 
-        return institucionRepository.findByCodigoBic(bic)
-                .filter(this::validarDisponibilidad);
+        return institucionRepositorio.findByCodigoBic(bic)
+                .filter(this::validarDisponibilidad)
+                .map(mapper::toDTO);
     }
 
-    public Institucion aniadirRegla(@NonNull String bic, @NonNull ReglaEnrutamiento nuevaRegla) {
-        Institucion inst = institucionRepository.findByCodigoBic(bic)
+    public InstitucionDTO aniadirRegla(@NonNull String bic, @NonNull InstitucionDTO.ReglaDTO nuevaReglaDTO) {
+        Institucion inst = institucionRepositorio.findByCodigoBic(bic)
                 .orElseThrow(() -> new RuntimeException("Banco no encontrado: " + bic));
 
         if (inst.getReglasEnrutamiento() == null) {
             inst.setReglasEnrutamiento(new ArrayList<>());
         }
 
+        ReglaEnrutamiento nuevaRegla = new ReglaEnrutamiento(nuevaReglaDTO.getPrefijoBin(), nuevaReglaDTO.getAgente());
         inst.getReglasEnrutamiento().add(nuevaRegla);
         redisTemplate.delete(CACHE_KEY_PREFIX + nuevaRegla.getPrefijoBin());
 
-        return institucionRepository.save(inst);
+        return mapper.toDTO(institucionRepositorio.save(inst));
     }
 
-    public Optional<Institucion> descubrirBancoPorBin(String bin) {
+    public Optional<InstitucionDTO> descubrirBancoPorBin(String bin) {
         if (bin == null)
             return Optional.empty();
         String cacheKey = CACHE_KEY_PREFIX + bin;
 
-        Institucion cacheData = (Institucion) redisTemplate.opsForValue().get(cacheKey);
-        if (cacheData != null) {
-            return Optional.of(cacheData).filter(this::validarDisponibilidad);
+        // Intentamos obtener DTO de cache
+        // Si antes guardaba Entidad, esto podría fallar al deserializar si la clase
+        // cambió.
+        // Asumiremos cache limpio o compatible.
+        Object cacheData = redisTemplate.opsForValue().get(cacheKey);
+
+        if (cacheData instanceof InstitucionDTO) {
+            return Optional.of((InstitucionDTO) cacheData);
         }
 
-        return institucionRepository.findByReglasEnrutamientoPrefijoBin(bin)
+        return institucionRepositorio.findByReglasEnrutamientoPrefijoBin(bin)
                 .filter(this::validarDisponibilidad)
                 .map(inst -> {
-
-                    redisTemplate.opsForValue().set(cacheKey, inst, Duration.ofHours(1));
-                    return inst;
+                    InstitucionDTO dto = mapper.toDTO(inst);
+                    redisTemplate.opsForValue().set(cacheKey, dto, Duration.ofHours(1));
+                    return dto;
                 });
     }
 
@@ -105,7 +114,7 @@ public class DirectorioService {
         if (bic == null)
             return;
 
-        institucionRepository.findByCodigoBic(bic).ifPresent(inst -> {
+        institucionRepositorio.findByCodigoBic(bic).ifPresent(inst -> {
             InterruptorCircuito interruptor = inst.getInterruptorCircuito();
             if (interruptor == null) {
                 interruptor = new InterruptorCircuito(false, 0, null);
@@ -122,7 +131,7 @@ public class DirectorioService {
                 invalidarCacheDelBanco(inst);
             }
 
-            institucionRepository.save(inst);
+            institucionRepositorio.save(inst);
         });
     }
 
@@ -145,7 +154,7 @@ public class DirectorioService {
             if (segundos > 30) {
                 interruptor.setEstaAbierto(false);
                 interruptor.setFallosConsecutivos(0);
-                institucionRepository.save(inst);
+                institucionRepositorio.save(inst);
                 log.info(">>> CIRCUIT BREAKER CERRADO (Auto-recuperación) para banco: {}", inst.getCodigoBic());
                 return true;
             }
@@ -155,9 +164,9 @@ public class DirectorioService {
         return false;
     }
 
-    public Institucion actualizarParametrosRestringidos(String bic, String nuevoEstado, String nuevaUrl) {
+    public InstitucionDTO actualizarParametrosRestringidos(String bic, String nuevoEstado, String nuevaUrl) {
 
-        Institucion inst = institucionRepository.findByCodigoBic(bic)
+        Institucion inst = institucionRepositorio.findByCodigoBic(bic)
                 .orElseThrow(() -> new RuntimeException("Institución no encontrada"));
 
         if (nuevoEstado != null) {
@@ -176,6 +185,6 @@ public class DirectorioService {
 
         invalidarCacheDelBanco(inst);
 
-        return institucionRepository.save(inst);
+        return mapper.toDTO(institucionRepositorio.save(inst));
     }
 }

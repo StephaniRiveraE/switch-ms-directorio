@@ -1,4 +1,4 @@
-package com.bancario.msdirectorio.model;
+package com.bancario.msdirectorio.modelo;
 
 import java.time.LocalDateTime;
 
@@ -7,7 +7,8 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-@Getter @Setter
+@Getter
+@Setter
 @NoArgsConstructor
 @AllArgsConstructor
 public class InterruptorCircuito {

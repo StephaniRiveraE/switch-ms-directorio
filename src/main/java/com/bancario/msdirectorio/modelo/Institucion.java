@@ -1,4 +1,4 @@
-package com.bancario.msdirectorio.model;
+package com.bancario.msdirectorio.modelo;
 
 import java.util.List;
 
