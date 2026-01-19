@@ -37,6 +37,8 @@ public class InstitucionDTO {
     public static class CircuitBreakerDTO {
         private boolean estaAbierto;
         private int fallosConsecutivos;
+
+        @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING)
         private LocalDateTime ultimoFallo;
     }
 }
