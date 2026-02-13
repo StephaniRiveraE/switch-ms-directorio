@@ -9,7 +9,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-@DynamoDBTable(tableName = "directorio")
+@DynamoDBTable(tableName = "switch-directorio-instituciones")
 @Getter
 @Setter
 @NoArgsConstructor
